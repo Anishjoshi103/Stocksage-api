@@ -1,0 +1,6 @@
+{
+  "name": "stocksage-api",
+  "version": "1.0.0",
+  "description": "StockSage Pro price API — Yahoo Finance serverless proxy",
+  "private": true
+}

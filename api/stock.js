@@ -81,14 +81,17 @@ module.exports = async function handler(req, res) {
   ].join(',');
 
   try {
-    const [chartRes, summaryRes] = await Promise.all([
+    const [chartRes, summaryRes, quoteRes] = await Promise.all([
       fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${yfSym}?interval=${safeIntvl}&range=${safeRange}&includePrePost=false`, { headers: hdrs }),
       fetch(`https://query1.finance.yahoo.com/v10/finance/quoteSummary/${yfSym}?modules=${MODULES}`, { headers: hdrs }),
+      fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${yfSym}&fields=trailingPE,forwardPE,priceToBook,epsTrailingTwelveMonths,beta,marketCap,trailingAnnualDividendYield`, { headers: hdrs }),
     ]);
 
     if (!chartRes.ok) throw new Error(`Yahoo chart HTTP ${chartRes.status}`);
     const chartJson   = await chartRes.json();
     const summaryJson = summaryRes.ok ? await summaryRes.json() : {};
+    const quoteJson   = quoteRes.ok   ? await quoteRes.json()   : {};
+    const qr2         = quoteJson?.quoteResponse?.result?.[0] || {};
 
     if (chartJson.chart?.error) throw new Error(chartJson.chart.error.description || 'Chart error');
     if (!chartJson.chart?.result?.[0]) throw new Error(`No data for ${sym}`);
@@ -156,9 +159,9 @@ module.exports = async function handler(req, res) {
     const opsCF       = n(cf, 'totalCashFromOperatingActivities');
     const capex       = n(cf, 'capitalExpenditures');
 
-    const eps  = pick(n(sta, 'trailingEps'), shares && netIncome ? netIncome / shares : null);
-    const pe   = pick(n(det,'trailingPE'), n(sta,'trailingPE'), n(pr,'trailingPE'), eps && priceNow ? priceNow/eps : null);
-    const pb   = pick(n(sta,'priceToBook'), bookVal && priceNow ? priceNow/bookVal : null);
+    const eps  = pick(n(sta, 'trailingEps'), qr2.epsTrailingTwelveMonths, shares && netIncome ? netIncome / shares : null);
+    const pe   = pick(n(det,'trailingPE'), n(sta,'trailingPE'), n(pr,'trailingPE'), qr2.trailingPE, eps && priceNow ? priceNow/eps : null);
+    const pb   = pick(n(sta,'priceToBook'), qr2.priceToBook, bookVal && priceNow ? priceNow/bookVal : null);
     const ps   = pick(n(sta,'priceToSalesTrailing12Months'), mcapRaw && totalRev ? mcapRaw/totalRev : null);
     const roe  = pick(n(fin,'returnOnEquity'),  totalEq && netIncome   ? netIncome/totalEq   : null);
     const roa  = pick(n(fin,'returnOnAssets'),  totalAssets && netIncome ? netIncome/totalAssets : null);
@@ -209,9 +212,9 @@ module.exports = async function handler(req, res) {
       eps,              pb,              ps,
       peg:              n(sta, 'pegRatio'),
       bookValue:        bookVal,
-      dividendYield:    pick(n(det,'dividendYield'), n(sta,'dividendYield')),
+      dividendYield:    pick(n(det,'dividendYield'), n(sta,'dividendYield'), qr2.trailingAnnualDividendYield),
       dividendRate:     n(det, 'dividendRate'),
-      beta:             pick(n(sta,'beta'), n(det,'beta')),
+      beta:             pick(n(sta,'beta'), n(det,'beta'), qr2.beta),
       roe,              roa,
       grossMargins:     gm,
       operatingMargins: om,
